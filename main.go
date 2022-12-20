@@ -1,12 +1,13 @@
 package main
 
 import (
+	"SimpleTally/vmix"
 	"fmt"
-	"net"
 	"os"
 	"time"
 
 	"github.com/andreykaipov/goobs"
+	"github.com/andreykaipov/goobs/api/events"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
@@ -95,12 +96,19 @@ func init() {
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC822})
 
-	oLog = log.With().Str("component", "obs").Logger()
+	oLog = log.With().Str("component", "OBS").Logger()
 	vLog = log.With().Str("component", "vMix").Logger()
 }
 
 func main() {
 	log.Info().Msg("Init finished, starting listeners...")
+
+	// Listen for vMix TCP connections
+	vmix := vmix.New(listenAddress, listenPort, vLog)
+	go vmix.Listen()
+
+	vLog.Info().
+		Msgf("vMix TCP listener started on '%s:%d'", listenAddress, listenPort)
 
 	// Start OBS websocket connection
 	obs, err := goobs.New(fmt.Sprintf("%s:%d", address, port), goobs.WithPassword(password))
@@ -120,29 +128,28 @@ func main() {
 	}
 	oLog.Info().Msgf("Connected to OBS (v%s) at '%s:%d'", info.ObsVersion, address, port)
 
-	// Start TCP listener for vMix Tally clients
-	socket, err := net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
-	if err != nil {
-		vLog.Fatal().
-			AnErr("error", err).
-			Msgf("Unable to start TCP listener on '%s:%d'", listenAddress, listenPort)
-	}
-	defer socket.Close()
-	vLog.Info().
-		Msgf("TCP listener started on '%s:%d'", listenAddress, listenPort)
-
-	// Handle each client connection in a separate thread
-	for {
-		conn, err := socket.Accept()
-		if err != nil {
-			vLog.Error().AnErr("error", err).Msg("Error accepting connection")
-			continue
-		}
-
-		go handleVMix(conn)
-	}
+	// Listen and handle OBS events
+	oLog.Info().Msg("Listening for OBS websocket events")
+	obs.Listen(obsEvent)
 }
 
-func handleVMix(conn net.Conn) {
-	vLog.Info().Msgf("Connection from '%s' accepted", conn.RemoteAddr().String())
+func obsEvent(event any) {
+	switch e := event.(type) {
+
+	// Is the source currently in program?
+	case *events.InputActiveStateChanged:
+		if e.InputName == source {
+
+		}
+
+		break
+
+	// Is the source currently in preview?
+	case *events.InputShowStateChanged:
+		if e.InputName == source {
+
+		}
+
+		break
+	}
 }
